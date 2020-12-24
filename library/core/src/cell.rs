@@ -519,6 +519,41 @@ impl<T: ?Sized> Cell<T> {
         // SAFETY: `&mut` ensures unique access.
         unsafe { &*(t as *mut T as *const Cell<T>) }
     }
+
+    /// Accesses the underlying data behind a mutable reference.
+    /// Can be used to update the data or to return a value computed from it.
+    /// The reference is only valid inside the closure.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::cell::Cell;
+    ///
+    /// // Vec<i32> is not Copy, so Cell::get() and Cell::update() can't be used
+    /// let c = Cell::new(vec![1, 2, 3]);
+    /// let length = c.access(|nums| nums.len());
+    /// assert_eq!(length, 3);
+    /// c.access(|nums| nums.push(4));
+    /// assert_eq!(c.into_inner(), vec![1, 2, 3, 4]);
+    /// ```
+    ///
+    /// Lifetimes do not allow the mutable reference to be returned from the closure:
+    /// ```compile_fail
+    /// use std::cell::Cell;
+    ///
+    /// let c = Cell::new(1);
+    /// let ref_to_data: &mut i32 = c.access(|num| num);
+    /// *ref_to_data = 2;
+    /// ```
+    #[inline]
+    pub fn access<U>(&self, f: fn(&mut T) -> U) -> U {
+        // SAFETY: This can cause data races if called from a separate thread,
+        // but `Cell` is `!Sync` so this won't happen.
+        // If the thread is using the mutable reference, it is in `f`.
+        // But `f` cannot capture any values from the outer scope
+        // and `Cell`s cannot be `static`, so `f` cannot access the `Cell`.
+        f(unsafe { &mut *self.value.get() })
+    }
 }
 
 impl<T: Default> Cell<T> {
